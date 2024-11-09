@@ -82,7 +82,7 @@ SQLAlchemy==2.0.36
 sqlglot==25.29.0
 sqlglotrs==0.2.13
 stack-data==0.6.3
-streamlit==1.40.0
+streamlit==1.24.1
 tenacity==9.0.0
 toml==0.10.2
 tornado==6.4.1
