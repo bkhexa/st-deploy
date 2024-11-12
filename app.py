@@ -8,7 +8,15 @@ import io
 import matplotlib.pyplot as plt
 from htmlTemplates import css, bot_template, user_template  # Import templates for styling
 import base64
-
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import Paragraph, Table, TableStyle
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from io import BytesIO
+from PIL import Image
+import tempfile
+import os
 load_dotenv()
 
 # Function to load and encode images as base64
@@ -42,7 +50,7 @@ st.set_page_config(layout="wide", page_title="MSL Insights Assistant")
 # Inject custom CSS
 st.markdown(css, unsafe_allow_html=True)
 
-# Sidebar for app info, features, and file upload
+# Sidebar for app info, features, file upload, and PDF download
 with st.sidebar:
     st.markdown("<h1 style='color: orange;'>MSL Insights Assistant</h1>", unsafe_allow_html=True)
     st.write("An intuitive application that allows you to interact with your data using natural language.")
@@ -71,11 +79,138 @@ with st.sidebar:
     - **Data Analysis Integration**: Enables interaction with uploaded data files for detailed analysis.
     - **Dynamic Responses**: Retains context for seamless conversations.
     """, unsafe_allow_html=True)
+    
+    
+    def generate_pdf(chat_history):
+        buffer = BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        y_position = height - 50  # Start from a bit lower than the top
+        left_padding = 40  # Left margin padding
+        right_padding = 40  # Right margin padding
+        table_width_max = width - left_padding - right_padding
+        max_text_width = width - left_padding - right_padding  # Max width for text lines
+
+        # Title for the PDF
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(left_padding, y_position, "Chat Summary with Mebo")
+        y_position -= 50  # Increase space after the title
+
+        # Prepare styles for table cells and wrapped text
+        styles = getSampleStyleSheet()
+        wrap_style = ParagraphStyle(name="WrappedText", fontSize=8, leading=10, spaceAfter=6)
+        text_wrap_style = ParagraphStyle(name="TextWrap", fontSize=10, leading=12, spaceAfter=6, alignment=0)  # Left-aligned text
+
+        # Add chat messages to the PDF
+        c.setFont("Helvetica", 11)  # Set a consistent font size
+        for message in chat_history:
+            role = "User" if message["role"] == "user" else "Assistant"
+            
+            # Draw role label
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(left_padding, y_position, f"{role}:")
+            y_position -= 20  # Space after role label
+
+            # Render DataFrame content
+            if isinstance(message["content"], pd.DataFrame):
+                df = message["content"]
+                max_rows_per_page = 30  # Define maximum rows to fit per page
+                num_pages = (len(df) // max_rows_per_page) + 1
+                
+                for page in range(num_pages):
+                    # Get chunk of DataFrame for the current page
+                    chunk_df = df.iloc[page * max_rows_per_page:(page + 1) * max_rows_per_page]
+                    data = [[Paragraph(str(cell), wrap_style) for cell in row] for row in [chunk_df.columns.to_list()] + chunk_df.values.tolist()]
+                    table = Table(data, colWidths=[table_width_max / len(chunk_df.columns)] * len(chunk_df.columns))
+                    table.setStyle(TableStyle([
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.black)
+                    ]))
+
+                    # Calculate space needed for the table and apply left and right padding
+                    table_width, table_height = table.wrap(0, 0)
+                    x_position = left_padding  # Start drawing from the left margin
+                    if y_position - table_height < 50:
+                        c.showPage()
+                        y_position = height - 50
+                    y_position -= table_height
+                    table.drawOn(c, x_position, y_position)
+                    y_position -= 30
+
+                    if page < num_pages - 1:  # Prepare for the next chunk
+                        c.showPage()
+                        y_position = height - 50
+
+            # Render chart content
+            elif isinstance(message["content"], plt.Figure):
+                chart_height = 220
+                if y_position - chart_height < 50:  # Check if chart fits on the current page
+                    c.showPage()
+                    y_position = height - 50
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                    message["content"].savefig(tmpfile.name, format="png")
+                    c.drawImage(tmpfile.name, 60, y_position - chart_height, width=440, height=200)  # Centered horizontally
+                    y_position -= chart_height + 30  # Adjust for chart height and extra space
+                os.remove(tmpfile.name)  # Delete temporary file after use
+
+            # Render image content
+            elif isinstance(message["content"], io.BytesIO):
+                img_height = 220
+                if y_position - img_height < 50:  # Check if image fits on the current page
+                    c.showPage()
+                    y_position = height - 50
+                image = Image.open(message["content"])
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                    image.save(tmpfile.name, format="PNG")
+                    c.drawImage(tmpfile.name, 60, y_position - img_height, width=440, height=200)  # Centered horizontally
+                    y_position -= img_height + 30  # Adjust for image height and extra space
+                os.remove(tmpfile.name)  # Delete temporary file after use
+
+            # Render text content with wrapping
+            elif isinstance(message["content"], str):
+                content = message["content"]
+                paragraph = Paragraph(content, text_wrap_style)  # Create a Paragraph with wrapping
+                paragraph_width, paragraph_height = paragraph.wrap(max_text_width, y_position)  # Wrap within max width
+                if y_position - paragraph_height < 50:  # Check if it fits on the page
+                    c.showPage()
+                    y_position = height - 50
+                paragraph.drawOn(c, left_padding, y_position - paragraph_height)  # Draw the paragraph
+                y_position -= paragraph_height + 30  # Adjust for paragraph height and spacing
+
+            # Add a new page if space runs out
+            if y_position < 50:
+                c.showPage()
+                y_position = height - 50
+
+        c.save()
+        buffer.seek(0)
+        return buffer
+    # Download chat history as PDF
+    st.markdown("### Download Options")
+    if st.button("Download Chat as PDF"):
+        if "chat_history" in st.session_state and st.session_state.chat_history:
+            pdf_buffer = generate_pdf(st.session_state.chat_history)
+            st.download_button(
+                label="Download Chat PDF",
+                data=pdf_buffer,
+                file_name="Mebo_Insights_Report.pdf",
+                mime="application/pdf"
+            )
+        else:
+            st.warning("No chat history to download.")
+
+
 
 # Initialize session state for chat history and dataframes
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
-        {"role": "assistant", "content": "Hello! I'm your MSL Insights Assistant. Please upload a file to get started!"}
+        {"role": "assistant", "content": "Hello! I'm Mebo your MSL Insights Assistant. Please upload a file to get started!"}
     ]
 if "dataframes" not in st.session_state:
     st.session_state.dataframes = None
