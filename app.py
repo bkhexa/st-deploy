@@ -45,14 +45,14 @@ except Exception as e:
     llm = None  # Set llm to None if initialization fails
 
 # Set page configuration
-st.set_page_config(layout="wide", page_title="MSL Insights Assistant")
+st.set_page_config(layout="wide", page_title="Medical Insights BOT")
 
 # Inject custom CSS
 st.markdown(css, unsafe_allow_html=True)
 
 # Sidebar for app info, features, file upload, and PDF download
 with st.sidebar:
-    st.markdown("<h1 style='color: orange;'>MSL Insights Assistant</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color: orange;'>Medical Insights BOT</h1>", unsafe_allow_html=True)
     st.write("An intuitive application that allows you to interact with your data using natural language.")
 
     # File uploader
@@ -93,7 +93,7 @@ with st.sidebar:
 
         # Title for the PDF
         c.setFont("Helvetica-Bold", 14)
-        c.drawString(left_padding, y_position, "Chat Summary with Mebo")
+        c.drawString(left_padding, y_position, "Chat Summary with MIBO")
         y_position -= 50  # Increase space after the title
 
         # Prepare styles for table cells and wrapped text
@@ -199,7 +199,7 @@ with st.sidebar:
             st.download_button(
                 label="Download Chat PDF",
                 data=pdf_buffer,
-                file_name="Mebo_Insights_Report.pdf",
+                file_name="MIBO_Insights_Report.pdf",
                 mime="application/pdf"
             )
         else:
@@ -210,13 +210,13 @@ with st.sidebar:
 # Initialize session state for chat history and dataframes
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
-        {"role": "assistant", "content": "Hello! I'm Mebo your MSL Insights Assistant. Please upload a file to get started!"}
+        {"role": "assistant", "content": "Hello! I'm MIBO your Medical Insights BOT. Please upload a file to get started!"}
     ]
 if "dataframes" not in st.session_state:
     st.session_state.dataframes = None
 
 # Main content area
-st.title("Chat with MSL Insights Assistant")
+st.title("Chat with Medical Insights BOT")
 
 # Initialize SmartDatalake with dataframes and LLM if a file is uploaded and llm is available
 sdf = None  # Initialize sdf as None by default
